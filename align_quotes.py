@@ -212,7 +212,7 @@ def align(quote1, quote2,matchscore=MATCHSCORE,misalignscore=MISALIGNSCORE,misma
 
     # Trim the bits left over from searching algorithm. In certain edge cases
     # the ends are not the same
-    # IW: I don't understand why we need to trim the end
+    # IW: Commented, uncomment the following lines to trim
     # while total_quote_1[-1] == " " or total_quote_2[-1] == " ":
     #     total_quote_1 = total_quote_1[:-1]
     #     total_quote_2 = total_quote_2[:-1]
@@ -222,13 +222,13 @@ def align(quote1, quote2,matchscore=MATCHSCORE,misalignscore=MISALIGNSCORE,misma
 
     return total_quote_1, total_quote_2
 
-# IW: Retrieves text from the original corpus
+# IW: Retrieve text from the original corpus
 def original(data,orig):
     data[6] = get_original(data, orig, 0, 4, 6)
     data[7] = get_original(data, orig, 1, 5, 7)
     return data
 
-# IW: Gets the original segment with the newly added spaces
+# IW: Get the original segment with the newly added spaces
 def get_original(data, metadata, a, b, c):
     start = int(data[b])
     end = int(data[b]) + len(data[c])
@@ -240,12 +240,12 @@ def get_original(data, metadata, a, b, c):
             res = insert_space(res,pos)
     return res[:len(data[c])]
 
-# IW: Inserts spaces to match aligned text
+# IW: Insert spaces to match aligned text
 def insert_space(text, pos):
     return text[:pos]+' '+text[pos:]
 
 # Run the process
-def runalignment(content,totallength,orig):
+def runalignment(content,totallength,orig=False):
     global tracker
     info = content.split("\t")
     # If the quotes are identical, no need to align them
@@ -257,8 +257,10 @@ def runalignment(content,totallength,orig):
         info[6] = aligneda
         info[7] = alignedb
 
-        # IW: Retrieve text from original corpus (useful if variants were replaced in prepare_corpus)
-        info = original(info,orig)
+        # IW: Retrieve text from original corpus
+        # useful if variants were replaced in prepare_corpus
+        if orig is not False:
+            info = original(info,orig)
 
         content = "\t".join(info)
     tracker += 1
@@ -304,10 +306,14 @@ if __name__=='__main__':
             contents = use_contents
 
     # IW: Open json where the original text has been stored
-    with open('./corpus.json','r') as of:
-        orig = json.load(of)
-
-        results = pool.starmap(runalignment,zip(contents,repeat(len(contents)),repeat(orig)))
+    # only if prepare_corpus.py was used with -v option
+    try:
+        with open('./corpus.json','r') as of:
+            orig = json.load(of)
+            results = pool.starmap(runalignment,zip(contents,repeat(len(contents)),repeat(orig)))
+    except FileNotFoundError:
+        print('There is no variants in your corpus or you chose not to take them into account')
+        results = pool.starmap(runalignment,zip(contents,repeat(len(contents))))
 
 
     # Remove blank results and flatten the list
