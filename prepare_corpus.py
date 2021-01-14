@@ -15,7 +15,13 @@ TextDivision should be zero if the text has not been divided. Otherwise, it can 
 chapter number, volume number, etc.
 '''
 
-import os, re, pickle, sys
+import os
+import re
+import sys
+import argparse
+
+import pickle
+import json
 
 #*****************#
 # PREP PARAMETERS #
@@ -32,13 +38,20 @@ toremove = ['』','。', '！', '，', '：', '、', '（', '）', '；', '？',
 #**********************#
 
 # clean the text. This will remove everything in the above list from the text
-def clean(content,remove):
+def clean(content,remove,variants=False):
     # These two lines are useful for Chinese texts where there was no whitespace or punctuation
     # in the original documents
-	content = re.sub('\s+', '', content)
-	for item in remove:
-		content = content.replace(item, "")
-	return content
+    content = re.sub('\s+', '', content)
+    for item in remove:
+        content = content.replace(item, "")
+
+    if variants:
+    # IW: Replace variants
+        content = re.sub('[於于]','乎',content)
+        content = re.sub('[后]','後',content)
+        content = re.sub('[云]','曰',content)
+
+    return content
 
 #*********************#
 # START OF MAIN LOGIC #
@@ -46,6 +59,12 @@ def clean(content,remove):
 
 # containers for the data. The final file will be a list of lists. The first item
 # will be metadata, and the second item will be the texts themselves.
+
+# IW: add --variants option
+parser = argparse.ArgumentParser()
+parser.add_argument('-v', '--variants', help='replace given variants', action='store_true')
+args = parser.parse_args()
+
 all_filenames = []
 all_texts = []
 
@@ -54,23 +73,34 @@ totalcharacters = 0
 
 # Retrieve the directory information
 for root, dirs, files in os.walk('corpus'):
-    # remove license file if present
-    files = [f for f in files if f != "LICENSE"]
+    # IW: ignore license file and macOS .DS_store file
+    files = [f for f in files if '.txt' in f]
+
+    # IW: Initiates dictionary for original text if -v option
+    value = False
+    if args.variants:
+        original = {}
+        value = True
+
     # Iterate through each file in the filelist
     for i,f in enumerate(files):
 
         # remove extension
         file_name = f[:-4]
-
         with open(f"{root}/{f}") as tf:
+            content = tf.read()
+
+            # IW: Also save original content
+            if args.variants:
+                original[file_name] = clean(content,toremove)
             # clean text, append it to all texts, and increment total length tracker
-            text = clean(tf.read(),toremove)
+            text = clean(content,toremove,variants=value)
             all_texts.append(text)
             totalcharacters += len(text)
 
             # Save metadata
             all_filenames.append(file_name)
-        
+
         # print tracking statement
         sys.stdout.write(f"{i + 1} documents of {len(files)} completed\r")
         sys.stdout.flush()
@@ -80,3 +110,8 @@ print(f"\n{totalcharacters} from {len(all_texts)} documents.")
 
 # Save data to pickle
 pickle.dump([all_filenames, all_texts], open(picklefile, "wb"))
+
+# IW: Save original data to json
+if args.variants:
+    with open('./corpus.json', 'w') as jsonfile:
+        json.dump(original, jsonfile, indent=4, ensure_ascii=False)
