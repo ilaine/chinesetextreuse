@@ -80,12 +80,13 @@ Outputs a gephi compatible edge list titled `edges.csv`
 ## align_quotes.py 
 You can align the quotes using the Needleman Wunsch algorithm with this script. There are several speed optimizations in the code itself, but it is based almost entirely on algorithms. Here you can specify the documents you are interested in. It is generally not necessary to align EVERYTHING, though you can if you want by specifying
 ```alignment_docs = None```
-Normally, you shoud provide a list of document names as the purpose is to aid in reading `alignment_docs = ["doc1", "doc2"]` You can also adjust the scores given to tweak your prefered alignment type. This outputs a file called "corpus_alignment.txt"
+Normally, you shoud provide a list of document names as the purpose is to aid in reading `alignment_docs = ["doc1", "doc2"]` You can also adjust the scores given to tweak your prefered alignment type. This outputs a file called `corpus_alignment.txt`.
 
 # Step Six
 ## build_chord_viz.py
 This simply converts information found in `corpus_alignment.txt` and `corpus_text_lengths.txt` to a format that is loaded into `viz.html`, a simple chord viewer and intertextuality explorer written in d3js.
-outputs `edge_data.js`
+
+Outputs `edge_data.js`
 
 # Step Seven
 ## viz.html
