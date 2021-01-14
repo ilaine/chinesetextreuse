@@ -1,3 +1,7 @@
+This version of Paul Vierthaler's program chinesetextreuse was adapted to fit the needs of the Shijing-net project conducted by Marie Bizais-Lillig.
+
+# Original README:
+
 This is a suite of tools that takes raw texts as input, cleans them, preps them, and then runs an intertextuality detection algorithm.
 
 Additionally, it aligns the resulting quotes and can arrange the results in a network format for exploration in outside tools.
