@@ -5,8 +5,12 @@ are listed, this operates on the entire corpus, but can be very slow
 depending on corpus size.
 '''
 
-import pickle, os, time, sys, Levenshtein
+import pickle, os, time, sys
 import numpy as np
+import json
+import re
+
+import Levenshtein
 from multiprocessing import Pool
 from itertools import repeat, chain
 
@@ -17,7 +21,8 @@ from itertools import repeat, chain
 # Align quotes occuring between the following documents. Provide at
 # least two. If None, all quotes will be aligned. If your corpus contains
 # signficant reuse, this may be slow.
-alignment_docs = ["KR2a0018 梁書-唐-姚思廉_10","KR2a0024 南史-唐-李延壽_54","KR2a0018 梁書-唐-姚思廉_11"]
+alignment_docs = None
+#["003 卷耳-前漢-毛", "003 卷耳-唐-孔穎達", "006 桃夭-唐-孔穎達", "007 兔罝-唐-孔穎達", "009 漢廣-唐-孔穎達", "011 麟之趾-前漢-毛", "011 麟之趾-唐-孔穎達", "011 麟之趾-後漢-鄭玄", "017 行露-唐-孔穎達", "017 行露-後漢-鄭玄", "020 摽有梅-唐-孔穎達", "024 何彼襛矣-前漢-毛", "024 何彼襛矣-唐-孔穎達", "025 騶虞-前漢-毛", "025 騶虞-唐-孔穎達", "031 擊鼓-前漢-毛", "031 擊鼓-唐-孔穎達", "031 擊鼓-後漢-鄭玄", "032 凱風-前漢-毛", "032 凱風-唐-孔穎達", "037 旄丘-前漢-毛", "037 旄丘-唐-孔穎達", "037 旄丘-後漢-鄭玄", "047 君子偕老-前漢-毛", "047 君子偕老-唐-孔穎達", "048 桑中-前漢-毛", "048 桑中-唐-孔穎達", "048 桑中-後漢-鄭玄", "050 定之方中-前漢-毛", "050 定之方中-唐-孔穎達", "050 定之方中-後漢-鄭玄", "065 黍離-唐-孔穎達", "065 黍離-後漢-鄭玄"]
 
 
 #**********************#
@@ -74,11 +79,11 @@ def divtexts(quote1, quote2, chunklimit,overlap,rangecheck):
         if chunk != chunks:
             tqe1 = (chunk+1)*chunklimit
             tqe2 = (chunk+1)*chunklimit
-        
+
             # retreive the boundary region
             tqr1 = quote1[tqe1-rangecheck:tqe1+rangecheck]
             tqr2 = quote2[tqe2-rangecheck:tqe2+rangecheck]
-            
+
             # identify a stretch of identical overlap and save the midpoint
             qe1 = None
             qe2 = None
@@ -91,7 +96,7 @@ def divtexts(quote1, quote2, chunklimit,overlap,rangecheck):
             if not qe1:
                 qe1 = tqe1
                 qe2 = tqe2
-            
+
             # save the cut region
             chunkedTexts.append([quote1[qs1:qe1],quote2[qs2:qe2]])
 
@@ -105,26 +110,26 @@ def divtexts(quote1, quote2, chunklimit,overlap,rangecheck):
             else:
                 chunkedTexts.append([quote1[qs1:],quote2[qs2:]])
     return chunkedTexts
-        
+
 # Algorithm used for quote alignment. Insights into how this work come from the original
 # Needleman-Wunsch article, but also from http://www.biorecipes.com/DynProgBasic/code.html
 def align(quote1, quote2,matchscore=MATCHSCORE,misalignscore=MISALIGNSCORE,mismatchscore=MISMATCHSCORE, chunklim=CHUNKLIM):
-    
+
     # The alignment algorithm is O(n^2) so only alinging short chunks speeds
-    # the process up. Here I divide each sequence into smaller chunks for 
+    # the process up. Here I divide each sequence into smaller chunks for
     # alignment and then recombine them at the end.
     if len(quote1) > chunklim:
         textchunks = divtexts(quote1, quote2, CHUNKLIM, OVERLAP, RANGEMATCH)
     else:
         textchunks = [[quote1, quote2]]
-    
+
     # Empty strings to store the calculated quotes
     total_quote_1 = ""
     total_quote_2 = ""
 
     # Iterate through each of the divided texts
     for texts in textchunks:
-        
+
         # Create alignment matrix
         matrix = np.zeros([len(texts[0])+1,len(texts[1])+1])
         # prep matrix:
@@ -133,7 +138,7 @@ def align(quote1, quote2,matchscore=MATCHSCORE,misalignscore=MISALIGNSCORE,misma
         for j in range(len(texts[1])+1):
             matrix[0][j] = -j
 
-        
+
         # Iterate through both texts and fill out the matrix
         for i in range(len(texts[0])):
             for j in range(len(texts[1])):
@@ -179,8 +184,8 @@ def align(quote1, quote2,matchscore=MATCHSCORE,misalignscore=MISALIGNSCORE,misma
             upper = matrix[i][j - 1]
             left  = matrix[i-1][j]
             diagonal = matrix[i-1][j-1]
-            maxval = max([upper, left, diagonal]) 
-            
+            maxval = max([upper, left, diagonal])
+
             # If the maximum value is the diagonal, move diagonally
             if maxval == diagonal:
                 i -= 1
@@ -190,7 +195,7 @@ def align(quote1, quote2,matchscore=MATCHSCORE,misalignscore=MISALIGNSCORE,misma
                     stringb = texts[1][j] + stringb
                 except:
                     print(texts, i, j)
-            # If the maximum value is above, insert gap into stringa    
+            # If the maximum value is above, insert gap into stringa
             elif maxval == upper:
                 j -= 1
                 stringa = " "+stringa
@@ -203,21 +208,44 @@ def align(quote1, quote2,matchscore=MATCHSCORE,misalignscore=MISALIGNSCORE,misma
 
         # add all parts of the string together
         total_quote_1 += stringa
-        total_quote_2 += stringb  
+        total_quote_2 += stringb
 
     # Trim the bits left over from searching algorithm. In certain edge cases
     # the ends are not the same
-    while total_quote_1[-1] == " " or total_quote_2[-1] == " ": 
-        total_quote_1 = total_quote_1[:-1]
-        total_quote_2 = total_quote_2[:-1]
-    while total_quote_1[-1] != total_quote_2[-1]:
-        total_quote_1 = total_quote_1[:-1]
-        total_quote_2 = total_quote_2[:-1]
-        
+    # IW: I don't understand why we need to trim the end
+    # while total_quote_1[-1] == " " or total_quote_2[-1] == " ":
+    #     total_quote_1 = total_quote_1[:-1]
+    #     total_quote_2 = total_quote_2[:-1]
+    # while total_quote_1[-1] != total_quote_2[-1]:
+    #     total_quote_1 = total_quote_1[:-1]
+    #     total_quote_2 = total_quote_2[:-1]
+
     return total_quote_1, total_quote_2
 
+# IW: Retrieves text from the original corpus
+def original(data,orig):
+    data[6] = get_original(data, orig, 0, 4, 6)
+    data[7] = get_original(data, orig, 1, 5, 7)
+    return data
+
+# IW: Gets the original segment with the newly added spaces
+def get_original(data, metadata, a, b, c):
+    start = int(data[b])
+    end = int(data[b]) + len(data[c])
+    res = metadata[data[a]][start:end]
+
+    if ' ' in data[c]:
+        spaces = [m.start() for m in re.finditer(' ', data[c])]
+        for pos in spaces:
+            res = insert_space(res,pos)
+    return res[:len(data[c])]
+
+# IW: Inserts spaces to match aligned text
+def insert_space(text, pos):
+    return text[:pos]+' '+text[pos:]
+
 # Run the process
-def runalignment(content,totallength):
+def runalignment(content,totallength,orig):
     global tracker
     info = content.split("\t")
     # If the quotes are identical, no need to align them
@@ -228,6 +256,10 @@ def runalignment(content,totallength):
         # Save the information
         info[6] = aligneda
         info[7] = alignedb
+
+        # IW: Retrieve text from original corpus (useful if variants were replaced in prepare_corpus)
+        info = original(info,orig)
+
         content = "\t".join(info)
     tracker += 1
     if tracker % 1000 == 0:
@@ -239,47 +271,51 @@ def runalignment(content,totallength):
 # START OF MAIN LOGIC #
 #*********************#
 
-# Start a global timer
-gs = time.time()
+if __name__=='__main__':
+    # Start a global timer
+    gs = time.time()
 
-# Initialize thread pool for parallel processing
-pool = Pool()
-runtimes = []
-save_contents = []
+    # Initialize thread pool for parallel processing
+    pool = Pool()
+    runtimes = []
+    save_contents = []
+
+    # Results container
+    results = []
+    # Iterate through each line in the file aligning the results using map
+    with open(CORPUSRESULTS, "r") as rf:
+        contents = rf.read().split("\n")
+        contents = contents[1:]
+
+        # If alignment_docs have been provided, extract the relevant quotes
+        if alignment_docs:
+            use_contents = []
+            pairs = set()
+            for t1 in alignment_docs:
+                for t2 in alignment_docs:
+                    if t1 != t2:
+                        pairs.add((t1, t2))
+
+            for line in contents:
+                info = line.split("\t")
+                pair = (info[0], info[1])
+                if pair in pairs:
+                    use_contents.append(line)
+            contents = use_contents
+
+    # IW: Open json where the original text has been stored
+    with open('./corpus.json','r') as of:
+        orig = json.load(of)
+
+        results = pool.starmap(runalignment,zip(contents,repeat(len(contents)),repeat(orig)))
 
 
-# Results container
-results = []
-# Iterate through each line in the file aligning the results using map
-with open(CORPUSRESULTS, "r") as rf:
-    contents = rf.read().split("\n")
-    contents = contents[1:]
-    
-    # If alignment_docs have beeen provided, extract the relevant quotes
-    if alignment_docs:
-        use_contents = []
-        pairs = set()
-        for t1 in alignment_docs:
-            for t2 in alignment_docs:
-                if t1 != t2:
-                    pairs.add((t1, t2))
+    # Remove blank results and flatten the list
+    save_contents = [s for s in results if len(s) > 0]
 
-        for line in contents:
-            info = line.split("\t")
-            pair = (info[0], info[1])
-            if pair in pairs:
-                use_contents.append(line)
-        contents = use_contents
+    with open(OUTPUTFILE, "w") as wf:
+        wf.write("\n".join(save_contents))
 
-    results = pool.starmap(runalignment,zip(contents,repeat(len(contents))))
-
-
-# Remove blank results and flatten the list    
-save_contents = [s for s in results if len(s) > 0]
-
-with open(OUTPUTFILE, "w") as wf:
-    wf.write("\n".join(save_contents))
-
-ge = time.time()
-gt = ge-gs
-print(f"Global Operation completed in {gt:.2f} seconds")
+    ge = time.time()
+    gt = ge-gs
+    print(f"Global Operation completed in {gt:.2f} seconds")
