@@ -22,11 +22,11 @@ SEEDLENGTH = 4
 
 # Matches must be above this percent similar. Use floats between 0 and 1
 # .8 works well for prose Chinese documents
-THRESHOLD = .8
+THRESHOLD = .5
 
 # Set the minimum length of an acceptable match. The shorter the length
 # the more noisy the results are.
-MATCHLENGTH = 10
+MATCHLENGTH = 6
 
 # Set this to limit the similarity comparison to last n characters
 # Set to None for no limit. Setting a limit significantly
@@ -79,7 +79,7 @@ RESULT_DIRECTORY = 'results/'
 # have been compared and also deletes results from old runs.foranalysis.txt"
 # If this is False, then the script can be stopped and restarted
 # without losing progress.
-DEBUG=False
+DEBUG=True
 
 # This following setting is necessary because of the multiprocessing module
 # The higher the maxtasks, the faster the processing is but the more memory
@@ -169,7 +169,7 @@ def matchlocations(source_locations, target_locations, source_dictionary, target
             locationsintarget[source] = sorted(targetlocs)
     sortedlocations = sorted(allsourcelocations)
     return sortedlocations, locationsintarget
-   
+
 # The output is the same as the above function but it runs on the index
 # created by the getSeeds function.
 def matchlocationsnonindexed(sourcedict, targetdict, matchingseeds):
@@ -219,7 +219,8 @@ def extend(sourcetext, targettext, ss, ts, threshold=THRESHOLD,matchlength=MATCH
 
     # While similarity is above the matching threshold, and the end of the quotes are within the two texts
     # keep extending the matches
-    while similarity >= threshold and se +extender <= len(sourcetext) and te + extender <= len(targettext):
+    # IW: Strictly inferior to source/targettext to avoid uneven comparison
+    while similarity >= threshold and se +extender < len(sourcetext) and te + extender < len(targettext):
         extender += 1
 
         # If the length is over a certain amount then limit the Lev measurement
@@ -230,7 +231,6 @@ def extend(sourcetext, targettext, ss, ts, threshold=THRESHOLD,matchlength=MATCH
 
         # Check similarity of extended quote
         similarity = Levenshtein.ratio(sourcetext[ss+adjust:se+extender],targettext[ts+adjust:te+extender])
-
         # If the similarity is less than the previous instance, increment straight decrease
         # Otherwise, reset straight decrease to 0 and reset final similarity to similarity
         if similarity < previoussimilarity:
@@ -243,8 +243,7 @@ def extend(sourcetext, targettext, ss, ts, threshold=THRESHOLD,matchlength=MATCH
         previoussimilarity = similarity
     # Back the length of the resulting quote up to the last time where its value began falling
     # and ended below the threshhold
-    length = se+extender-straightdecrease - ss
-
+    length = se+extender-straightdecrease-ss
     # return the length and final similarity
     return length, finalsimilarity
 
@@ -256,12 +255,12 @@ def extend(sourcetext, targettext, ss, ts, threshold=THRESHOLD,matchlength=MATCH
 def alltextmatches(sourcelocations,targetlocationdict,sourcetext,targettext,matchlength,levthreshold,targettitle):
     # container for results
     quoteinfo = []
-    
+
     # To avoid duplcation of effort, track the extent of previously identified source quote
     # and end of the target quote
     sourcequoterange = [-1,-1]
     targetquoteend = -1
-   
+
     # Iterate through each seed in the source lcation
     for source in sourcelocations:
         # If the current value of the source seed does not fall within the last identified quote range
@@ -272,19 +271,18 @@ def alltextmatches(sourcelocations,targetlocationdict,sourcetext,targettext,matc
         # Get the corresponding locations
         targetlocations = targetlocationdict[source]
 
-        
+
         # Iterate through all of the corresponding target locations
         for target in targetlocations:
 
-            # Ensure the source start is not inside the last source quote and that the target seed 
+            # Ensure the source start is not inside the last source quote and that the target seed
             # does not occur before the end of the last target quote.
             # If all of these things are true, this means the current seeds are internal to already
             # identified quotes and should be skipped
             if not (source >= sourcequoterange[0] and source < sourcequoterange[1] and target < targetquoteend):
-            
+
                 # Get the length and similarity of the strings begining at source and target
                 length, similarity = extend(sourcetext, targettext, source, target)
-                
                 # Save the results if the length is above the minimum matching length and similarity
                 # is above the set similarity threshold.
                 if length >= matchlength and similarity >= levthreshold:
@@ -295,23 +293,23 @@ def alltextmatches(sourcelocations,targetlocationdict,sourcetext,targettext,matc
                     # if it is not, reset the range to this quote. Otherwise, remain the same
                     if source >= sourcequoterange[1]:
                         sourcequoterange = [source,source+length]
-                    
+
                     # Set the end of the identified target quote
                     targetquoteend = target+length
-                        
+
     return quoteinfo
 
 
 # Compare two texts. This function is written this way to be fed in to the the
 # multiprocessing starmap, which allows text comparisons to be conducted in parallel
 def comparetexts(sourcetext, sourcetitle, targetmeta, targettext,sourceseeddict=None):
-    
+
     # Retrieve global variables that set the relevant parameters
     # This is NOT considered best practice, but it works.
     global SEEDLENGTH
     global MATCHLENGTH
     global THRESHOLD
-    
+
     # Construct the target title
     targettitle = targetmeta
     if PREPPEDINDEX:
@@ -331,8 +329,8 @@ def comparetexts(sourcetext, sourcetitle, targetmeta, targettext,sourceseeddict=
 
         # Find the interesection between the two sets
         matches = set.intersection(sourceseedlist, targetseedlist)
-        
-        # If the intersection between the two sets is more than zero, 
+
+        # If the intersection between the two sets is more than zero,
         # get the seed dictionaries for both and provide this to the
         # match locations function
         if len(matches) > 0:
@@ -345,15 +343,15 @@ def comparetexts(sourcetext, sourcetitle, targetmeta, targettext,sourceseeddict=
             # in the above two lists
             source_dictionary = text_dictionaries[sourceindex]
             target_dictionary = text_dictionaries[targetindex]
-        
+
             # get the matching locations
             sourcelocations, targetlocationdict = matchlocations(source_locations, target_locations, source_dictionary, target_dictionary, matches)
-        
+
     else:
         # Get the seeds from the source text dictionary (created outside the starmap process)
         # Starmap cannot accept a keys object, so it must be extracted here.
         sourceseedlist = sourceseeddict.keys()
-        
+
         # Index the target text and get seeds
         targetseeddictionary = getSeeds(targettext, SEEDLENGTH)
         targetseedlist = targetseeddictionary.keys()
@@ -367,160 +365,161 @@ def comparetexts(sourcetext, sourcetitle, targetmeta, targettext,sourceseeddict=
     if len(matches) > 0:
         quoteinfo = alltextmatches(sourcelocations,targetlocationdict,sourcetext,targettext,MATCHLENGTH,THRESHOLD,targettitle)
     else:
-        quoteinfo = []    
+        quoteinfo = []
     return quoteinfo
-        
+
 #*********************#
 # START OF MAIN LOGIC #
 #*********************#
 
-# If DEBUG is set to true, do not track completed files and delete results
-# currently held in the results directory.
-if DEBUG:
-    completed=[]
+if __name__=='__main__':
+    # If DEBUG is set to true, do not track completed files and delete results
+    # currently held in the results directory.
+    if DEBUG:
+        completed=[]
+        if os.path.isfile("completed_files.txt"):
+            os.remove("completed_files.txt")
+        if os.path.exists(RESULT_DIRECTORY):
+            shutil.rmtree(RESULT_DIRECTORY)
+            os.mkdir(RESULT_DIRECTORY)
+
+
+    # Create an empty list to keep track of how long the program is running
+    runtimes = []
+
+    # Initialize thread pool for parallel processing
+    pool = Pool(maxtasksperchild=MAXCHILDTASKS)
+
+    # If there is TEXTSTOANALYZE file, load that in to memory
+    analysisfiles = []
+    if TEXTSTOANALYZE:
+        if os.path.isfile(TEXTSTOANALYZE):
+            with open(TEXTSTOANALYZE,"r") as f:
+                analysisfiles = f.read().split("\n")
+
+    # If there is a CORPUSCOMPOSITION file, load that into memory
+    comparativefiles = []
+    if CORPUSCOMPOSITION:
+        if os.path.isfile(CORPUSCOMPOSITION):
+            with open(CORPUSCOMPOSITION,"r") as f:
+                comparativefiles = f.read().split("\n")
+
+    # If these files have not been provided or do not exist, use full corpus
+    if len(analysisfiles) == 0:
+        analysisfiles = alltitles
+    if len(comparativefiles) == 0:
+        comparativefiles = alltitles
+
+
+    # Check to see if any of the files have already been completed. These can be
+    # skipped by the script.
+    completed = []
     if os.path.isfile("completed_files.txt"):
-        os.remove("completed_files.txt")
-    if os.path.exists(RESULT_DIRECTORY):
-        shutil.rmtree(RESULT_DIRECTORY)
+        with open("completed_files.txt",'r') as f:
+            completed = f.read().split("\n")
+
+    # Eliminate files that have already been completed from the analysis and comparative files
+    if len(completed) > 0:
+        analysisfiles = set(analysisfiles) ^ set(completed)
+        comparativefiles = set(comparativefiles) ^ set(completed)
+
+    # In case there are empty strings (a possibility with user created file lists)
+    # delete the empty strings from the list
+    analysisfiles = [a for a in analysisfiles if a != ""]
+    comparativefiles = [c for c in comparativefiles if c != ""]
+
+    # If the RESULT_DIRECTORY does not exist, create it
+    if not os.path.exists(RESULT_DIRECTORY):
         os.mkdir(RESULT_DIRECTORY)
 
+    # Track how many files have been completed
+    total_completed_files = len(completed)
 
-# Create an empty list to keep track of how long the program is running
-runtimes = []
+    # If there is no prepared index, order the texts by size.
+    # This speeds up calculation times by ensuring that long indices are not calculated
+    # more than necessary. This can optionally be turned off.
+    if not PREPPEDINDEX and FRONTLOADLONG:
+        analysislengths = {}
+        for f in analysisfiles:
+            textlocation = titletoindex[f]
+            text = alltexts[textlocation]
+            analysislengths[f] = len(text)
+        analysisfiles = sorted(analysislengths, key=analysislengths.get, reverse=True)
 
-# Initialize thread pool for parallel processing
-pool = Pool(maxtasksperchild=MAXCHILDTASKS)
-
-# If there is TEXTSTOANALYZE file, load that in to memory
-analysisfiles = []
-if TEXTSTOANALYZE:
-    if os.path.isfile(TEXTSTOANALYZE):
-        with open(TEXTSTOANALYZE,"r") as f:
-            analysisfiles = f.read().split("\n")
-
-# If there is a CORPUSCOMPOSITION file, load that into memory
-comparativefiles = []
-if CORPUSCOMPOSITION:
-    if os.path.isfile(CORPUSCOMPOSITION):
-        with open(CORPUSCOMPOSITION,"r") as f:
-            comparativefiles = f.read().split("\n")
-
-# If these files have not been provided or do not exist, use full corpus
-if len(analysisfiles) == 0:
-    analysisfiles = alltitles
-if len(comparativefiles) == 0:
-    comparativefiles = alltitles
+        comparativelengths = {}
+        for c in comparativefiles:
+            textlocation = titletoindex[c]
+            text = alltexts[textlocation]
+            comparativelengths[c] = len(text)
+        comparativefiles = sorted(comparativelengths, key=comparativelengths.get, reverse=True)
 
 
-# Check to see if any of the files have already been completed. These can be
-# skipped by the script.
-completed = []
-if os.path.isfile("completed_files.txt"):
-    with open("completed_files.txt",'r') as f:
-        completed = f.read().split("\n")
-
-# Eliminate files that have already been completed from the analysis and comparative files
-if len(completed) > 0:
-    analysisfiles = set(analysisfiles) ^ set(completed)
-    comparativefiles = set(comparativefiles) ^ set(completed)
-
-# In case there are empty strings (a possibility with user created file lists)
-# delete the empty strings from the list
-analysisfiles = [a for a in analysisfiles if a != ""]
-comparativefiles = [c for c in comparativefiles if c != ""]
-
-# If the RESULT_DIRECTORY does not exist, create it
-if not os.path.exists(RESULT_DIRECTORY):
-    os.mkdir(RESULT_DIRECTORY)
-   
-# Track how many files have been completed
-total_completed_files = len(completed)
-
-# If there is no prepared index, order the texts by size.
-# This speeds up calculation times by ensuring that long indices are not calculated
-# more than necessary. This can optionally be turned off.
-if not PREPPEDINDEX and FRONTLOADLONG:
-    analysislengths = {}
+    # Iterate through every analysis file.
     for f in analysisfiles:
+        # Record start time
+        s = time.time()
+
+        # Gather text information
         textlocation = titletoindex[f]
         text = alltexts[textlocation]
-        analysislengths[f] = len(text)
-    analysisfiles = sorted(analysislengths, key=analysislengths.get, reverse=True)
+        title = alltitles[textlocation]
 
-    comparativelengths = {}
-    for c in comparativefiles:
-        textlocation = titletoindex[c]
-        text = alltexts[textlocation]
-        comparativelengths[c] = len(text)
-    comparativefiles = sorted(comparativelengths, key=comparativelengths.get, reverse=True)
+        # Get the comparative info. This needs to be recalculated each loop so
+        # information about finished texts is not sent into the analysis function
+        comparativemeta = []
+        comparativetexts = []
+        for cf in comparativefiles:
+            if cf != f:
+                location = titletoindex[cf]
+                comparativemeta.append(alltitles[location])
+                comparativetexts.append(alltexts[location])
 
+        # Print current status
+        print(f"Analyzing text {total_completed_files + 1} vs {len(comparativetexts)}: {f} from {alltitles[textlocation]} (length: {len(text)})")
 
-# Iterate through every analysis file. 
-for f in analysisfiles:
-    # Record start time
-    s = time.time()
+        # If the index has been prepped, give the data to the comparetexts function via starmap.
+        # Otherwise, create an index for the source text and then give the data
+        if PREPPEDINDEX:
+            results = pool.starmap(comparetexts, zip(repeat(text),
+                                            repeat(title),
+                                            comparativemeta,
+                                            comparativetexts))
+        else:
+            sourcedict = getSeeds(text, SEEDLENGTH)
+            results = pool.starmap(comparetexts, zip(repeat(text),
+                                            repeat(title),
+                                            comparativemeta,
+                                            comparativetexts,
+                                            repeat(sourcedict)))
 
-    # Gather text information
-    textlocation = titletoindex[f]
-    text = alltexts[textlocation]
-    title = alltitles[textlocation]
-    
-    # Get the comparative info. This needs to be recalculated each loop so
-    # information about finished texts is not sent into the analysis function
-    comparativemeta = []
-    comparativetexts = []
-    for cf in comparativefiles:
-        if cf != f:
-            location = titletoindex[cf]
-            comparativemeta.append(alltitles[location])
-            comparativetexts.append(alltexts[location])
+        # Filter out results where nothing was returned and flatten the list
+        # because results returns a list of lists
+        filtered_results = [r for r in results if len(r) != 0]
+        filtered_results = list(itertools.chain(*filtered_results))
 
-    # Print current status
-    print(f"Analyzing text {total_completed_files + 1} vs {len(comparativetexts)}: {f} from {alltitles[textlocation]} (length: {len(text)})")
+        # write the results to file:
+        with open(RESULT_DIRECTORY + f + ".txt","w") as wf:
+            wf.write("TargetTitle\tLength\tratio\tSource place\tTarget place\tAnalysis text\tTarget text\n")
+            wf.write("\n".join(filtered_results))
 
-    # If the index has been prepped, give the data to the comparetexts function via starmap.
-    # Otherwise, create an index for the source text and then give the data
-    if PREPPEDINDEX:
-        results = pool.starmap(comparetexts, zip(repeat(text), 
-                                        repeat(title),
-                                        comparativemeta,
-                                        comparativetexts))
-    else:
-        sourcedict = getSeeds(text, SEEDLENGTH)
-        results = pool.starmap(comparetexts, zip(repeat(text), 
-                                        repeat(title),
-                                        comparativemeta,
-                                        comparativetexts,
-                                        repeat(sourcedict)))
+        # Append the analysis filename to the completed lists and remove it from the comparative files
+        completed.append(f)
+        comparativefiles.remove(f)
 
-    # Filter out results where nothing was returned and flatten the list 
-    # because results returns a list of lists
-    filtered_results = [r for r in results if len(r) != 0]
-    filtered_results = list(itertools.chain(*filtered_results))
+        # write the completed list to file:
+        with open("completed_files.txt","w") as wf:
+            wf.write("\n".join(completed))
+            wf.close()
 
-    # write the results to file:
-    with open(RESULT_DIRECTORY + f + ".txt","w") as wf:
-        wf.write("TargetTitle\tLength\tratio\tSource place\tTarget place\tAnalysis text\tTarget text\n")
-        wf.write("\n".join(filtered_results))
-    
-    # Append the analysis filename to the completed lists and remove it from the comparative files
-    completed.append(f)
-    comparativefiles.remove(f)
+        # Increment the completed files tracker
+        total_completed_files += 1
 
-    # write the completed list to file:
-    with open("completed_files.txt","w") as wf:
-        wf.write("\n".join(completed))
-        wf.close()
+        # Record the finished time, append to the runtimes list, and calculated time usage information
+        e = time.time()
+        runtimes.append(e-s)
+        t = e-s
+        total = sum(runtimes)
+        average = total/len(runtimes)
 
-    # Increment the completed files tracker
-    total_completed_files += 1
-
-    # Record the finished time, append to the runtimes list, and calculated time usage information
-    e = time.time()
-    runtimes.append(e-s)
-    t = e-s
-    total = sum(runtimes)
-    average = total/len(runtimes)
-
-    # Print information on time usage.
-    print(f"Operation completed in {t:.2f} seconds (averaging {average:.2f}, in total {total:.2f})")
+        # Print information on time usage.
+        print(f"Operation completed in {t:.2f} seconds (averaging {average:.2f}, in total {total:.2f})")
