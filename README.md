@@ -6,7 +6,7 @@ This is a suite of tools that takes raw texts as input, cleans them, preps them,
 Additionally, it aligns the resulting quotes and can arrange the results in a network format for exploration in outside tools.
 
 # Requirements
-This suite has been tested on a machine running Ubuntu 16.04 with an i7 processor and 64GB of RAM and on MacOS.
+This suite has initially been tested on a machine running Ubuntu 16.04 with an i7 processor and 64GB of RAM. It was also tested on Ubuntu 18.04 and on MacOS Catalina (10.15.7).
 
 It requires the Anaconda distribution of Python 3 (minimum Python 3.6.3)
 
